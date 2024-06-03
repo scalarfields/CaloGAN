@@ -112,3 +112,7 @@ data/.nfs*
 analysis/*.pdf
 analysis/*.txt
 analysis/shower-shapes
+
+.DS_Store
+
+https://github.com/ptrblck/pytorch_misc/blob/master/LocallyConnected2d.py
