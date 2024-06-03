@@ -8,10 +8,13 @@ author: Luke de Oliveira (lukedeo@manifold.ai)
 """
 
 import keras.backend as K
-from keras.engine import InputSpec, Layer
+#from keras.engine import InputSpec, Layer
+from tensorflow.keras.layers import InputSpec
+from keras.layers import Layer
 from keras import initializers, regularizers, constraints, activations
 from keras.layers import Lambda, ZeroPadding2D, LocallyConnected2D
-from keras.layers.merge import concatenate, multiply
+from keras.layers import concatenate, multiply
+#from keras.layers.merge import concatenate, multiply
 
 import numpy as np
 

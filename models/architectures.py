@@ -11,7 +11,8 @@ from keras.initializers import constant
 from keras.layers import (Dense, Reshape, Conv2D, LeakyReLU, BatchNormalization,
                           LocallyConnected2D, Activation, ZeroPadding2D,
                           Dropout, Lambda, Flatten)
-from keras.layers.merge import concatenate, multiply
+#from keras.layers.merge import concatenate, multiply
+from keras.layers import concatenate, multiply
 import numpy as np
 
 
