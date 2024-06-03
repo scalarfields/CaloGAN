@@ -1,0 +1,11 @@
+Diario.txt (alla Pelissetto maniera)
+
+Link utili: 
+
+LaGAN: https://arxiv.org/pdf/1701.05927
+
+locally connected 2D: https://github.com/ptrblck/pytorch_misc/blob/master/LocallyConnected2d.py
+
+
+06/03/24
+provato a cambiare alcune funzioni di keras con altre per non dover downgradare la libreria. Con tensorflow sono dovuta scendere alla 2.15.1
