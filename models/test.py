@@ -6,7 +6,7 @@ import numpy as np
 
 # Custom LocallyConnected2d Layer
 class LocallyConnected2d(nn.Module):
-    def __init__(self, in_channels, out_channels, output_size, kernel_size, stride=1, bias=True):
+    def __init__(self, in_channels, out_channels, output_size, kernel_size, bias, stride=1):
         super(LocallyConnected2d, self).__init__()
         output_size = _pair(output_size)
         self.weight = nn.Parameter(
@@ -14,7 +14,7 @@ class LocallyConnected2d(nn.Module):
         )
         if bias:
             self.bias = nn.Parameter(
-                torch.randn(1, out_channels, output_size[0], output_size[1])
+                torch.full(1, out_channels, output_size[0], output_size[1], bias, requires_grad=True)
             )
         else:
             self.register_parameter('bias', None)
@@ -31,6 +31,8 @@ class LocallyConnected2d(nn.Module):
         if self.bias is not None:
             out += self.bias
         return out
+
+
 class Generator(nn.Module):
     def __init__(self, latent_dim, nb_rows, nb_cols):
         super(Generator, self).__init__()
@@ -42,8 +44,8 @@ class Generator(nn.Module):
         self.batch_norm = nn.BatchNorm2d(16)
 
         # Using custom LocallyConnected2d layers
-        self.local_conv1 = LocallyConnected2d(16, 6, output_size=(nb_rows+1, nb_cols+1), kernel_size=2)
-        self.local_conv2 = LocallyConnected2d(6, 1, output_size=(nb_rows, nb_cols), kernel_size=2)
+        self.local_conv1 = LocallyConnected2d(16, 6, output_size=(nb_rows+1, nb_cols+1), kernel_size=2, bias=0)
+        self.local_conv2 = LocallyConnected2d(6, 1, output_size=(nb_rows, nb_cols), kernel_size=2, bias=0)
 
     def forward(self, x):
         x = self.fc(x)
