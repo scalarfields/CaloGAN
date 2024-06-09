@@ -32,7 +32,7 @@ class LocallyConnected2d(nn.Module):
         )
         if bias:
             self.bias = nn.Parameter(
-                torch.full((1, out_channels, output_size_0, output_size_1), bias, requires_grad=True)
+                torch.full((1, out_channels, output_size_0, output_size_1), bias)
             )
         else:
             self.register_parameter('bias', None)
@@ -84,6 +84,66 @@ class InpaintingAttention(nn.Module):
         weighted_sum = torch.sum(x * weights, dim=1, keepdim=True)
 
         return weighted_sum
+
+
+
+""" Note that in PyTorch, constraints and regularizers are typically handled separately, 
+and the above example assumes simple weight initialization without custom constraints or regularizers.
+I managed to set initializers quite easily. Since there wasn't any predefined constraint on weights 
+I didn't try to set any of them. In cas we'll see. 
+
+I changed the settings so that input_shape is a compulsory argument because I was not able to manage **kwargs.
+
+I deleted the get config method because since pytorch does not let you set the inizializers and constraints
+from the outside in my opinion this method was useless
+ """   
+class Dense3D(nn.Module):
+    """
+    A 3D, trainable, dense tensor product layer.
+    """
+
+    def __init__(self, first_dim, last_dim, input_shape, activation=None, use_bias=True):
+        super(Dense3D, self).__init__()
+        self.first_dim = first_dim
+        self.last_dim = last_dim
+        self.activation = activation if activation else lambda x: x
+        self.use_bias = use_bias
+        self.input_shape = input_shape
+        self.input_dim = self.input_shape[-1]
+        # Apply constraints and regularizers (if any) after initialization
+        
+        # Initialize kernel (weights)
+        assert len(input_shape) >= 2
+        self.kernel = nn.Parameter(
+            torch.randn(first_dim, self.input_dim, last_dim)
+        )
+        nn.init.xavier_uniform_(self.kernel)
+   
+        # Initialize bias if use_bias is True
+        if use_bias:
+            self.bias = nn.Parameter(torch.zeros(first_dim, last_dim))
+        else:
+            self.bias = None
+        
+        nn.init.zeros_(self.bias)
+        
+
+    def forward(self, inputs):
+        # Compute the output
+        print(inputs.shape, self.kernel.shape)
+        out = torch.tensordot(inputs, self.kernel, dims=([1],[1]))
+        if self.use_bias:
+            out += self.bias
+        # Apply activation function
+        if self.activation:
+            out = self.activation(out)
+
+        return out
+
+    def compute_output_shape(self, input_shape):
+        assert len(input_shape) == 2
+        return (input_shape[0], self.first_dim, self.last_dim)
+    
     
 
 def energy_error(requested_energy, received_energy):
