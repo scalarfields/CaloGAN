@@ -6,6 +6,8 @@ LaGAN: https://arxiv.org/pdf/1701.05927
 
 locally connected 2D: https://github.com/ptrblck/pytorch_misc/blob/master/LocallyConnected2d.py
 
+weight initialization: https://discuss.pytorch.org/t/crossentropyloss-expected-object-of-type-torch-longtensor/28683?u=ptrblck
+                        https://pytorch.org/docs/stable/nn.init.html
 
 06/03/24
 provato a cambiare alcune funzioni di keras con altre per non dover downgradare la libreria. Con tensorflow sono dovuta scendere alla 2.15.1
