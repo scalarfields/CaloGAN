@@ -25,23 +25,24 @@ For now I assume that kernel size, padding, and stride are the same in both h an
 class LocallyConnected2d(nn.Module):
     def __init__(self, in_channels, out_channels, input_size, kernel_size, bias, stride=1, padding=0, dilation=1):
         super(LocallyConnected2d, self).__init__()
-        output_size_0=int(1+ (input_size[0] + 2*padding - dilation*(kernel_size-1)-1)/stride)
-        output_size_1=int(1+ (input_size[1] + 2*padding - dilation*(kernel_size-1)-1)/stride)
+        self.kernel_size = _pair(kernel_size)
+        self.stride = _pair(stride)
+        output_size_0=int(1+ (input_size[0] + 2*padding - dilation*(kernel_size-1)-1)/self.stride[0])
+        output_size_1=int(1+ (input_size[1] + 2*padding - dilation*(kernel_size-1)-1)/self.stride[1])
         self.weight = nn.Parameter(
             torch.randn(1, out_channels, in_channels, output_size_0, output_size_1, kernel_size**2)
         )
         if bias:
             self.bias = nn.Parameter(
-                torch.full((1, out_channels, output_size_0, output_size_1), bias)
+                torch.full((1, out_channels, output_size_0, output_size_1), bias, requires_grad=True)
             )
         else:
             self.register_parameter('bias', None)
-        self.kernel_size = _pair(kernel_size)
-        self.stride = _pair(stride)
-
+        
     def forward(self, x):
         _, c, h, w = x.size()
         kh, kw = self.kernel_size
+        print("kernel size", self.kernel_size)
         dh, dw = self.stride
         x = x.unfold(2, kh, dh).unfold(3, kw, dw)
         x = x.contiguous().view(*x.size()[:-2], -1)
@@ -143,8 +144,44 @@ class Dense3D(nn.Module):
     def compute_output_shape(self, input_shape):
         assert len(input_shape) == 2
         return (input_shape[0], self.first_dim, self.last_dim)
+
+
+def minibatch_output_shape(input_shape):
+    """ Computes output shape for a minibatch discrimination layer"""
+    shape = list(input_shape)
+    assert len(shape) == 3  # only valid for 3D tensors
+    return tuple(shape[:2])
+
+
+def minibatch_discriminator(x):
+    # Expand dimensions and compute differences
+    diffs = x.unsqueeze(3) - x.permute(1, 2, 0).unsqueeze(0)
+    #print(diffs.shape)
+
+    # Compute the L1 norm
+    l1_norm = torch.sum(torch.abs(diffs), dim=2)
+    #print(l1_norm.shape)
+
+    # Compute the exponent of the negative L1 norm and sum across the batch
+    return torch.sum(torch.exp(-l1_norm), dim=2)
+
+def sparsity_level(x):
+    # Get the shape of the input tensor
+    batch_size, channels, height, width = x.shape
     
+    # Calculate the total number of elements per sample (ignoring batch dimension)
+    total = float(channels * height * width)
     
+    # Count the number of non-zero elements along the (channels, height, width) dimensions
+    non_zero_counts = (x > 0.0).float().sum(dim=[1, 2, 3])
+    
+    # Reshape to a column vector [batch_size, 1]
+    non_zero_counts = non_zero_counts.view(batch_size, 1)
+    
+    # Calculate the sparsity level
+    sparsity = non_zero_counts / total
+    
+    return sparsity
 
 def energy_error(requested_energy, received_energy):
     # Compute the difference
@@ -162,10 +199,20 @@ def energy_error(requested_energy, received_energy):
     return over_energized * too_high + (1 - over_energized) * too_low
 
 
-
-
-
 def single_layer_energy_output_shape(input_shape):
     shape = list(input_shape)
     # assert len(shape) == 3
     return (shape[0], 1)
+
+
+#TODO: Check those functions:
+class SingleLayerEnergy(nn.Module):
+    def forward(self, x):
+        shape = x.shape
+        return torch.sum(x, dim=tuple(range(1, len(shape)))).view(-1, 1)
+
+def calculate_energy(x):
+    return SingleLayerEnergy()(x)
+
+def threshold_indicator(x, thresh):
+    return (x > thresh).float()
