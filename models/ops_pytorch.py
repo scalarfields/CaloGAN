@@ -42,7 +42,6 @@ class LocallyConnected2d(nn.Module):
     def forward(self, x):
         _, c, h, w = x.size()
         kh, kw = self.kernel_size
-        print("kernel size", self.kernel_size)
         dh, dw = self.stride
         x = x.unfold(2, kh, dh).unfold(3, kw, dw)
         x = x.contiguous().view(*x.size()[:-2], -1)
