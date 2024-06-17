@@ -11,3 +11,9 @@ weight initialization: https://discuss.pytorch.org/t/crossentropyloss-expected-o
 
 06/03/24
 provato a cambiare alcune funzioni di keras con altre per non dover downgradare la libreria. Con tensorflow sono dovuta scendere alla 2.15.1
+
+
+11/06/24
+
+Dario: costruzione modello fino a riga 371
+Marti: dopo
