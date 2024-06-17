@@ -99,6 +99,7 @@ class build_Discriminator(nn.Module):
         x = self.local_conv3(x)
         x = self.lrelu(x)
         x = self.batch_norm3(x)
+        x = self.flatten(x)
 
         if self.mbd or self.sparsity or self.sparsity_mbd:
             features = [x]

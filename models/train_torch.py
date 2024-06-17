@@ -220,7 +220,6 @@ if __name__ == '__main__':
 
 
     logger.info('Building discriminator')
-#TODO: Move this module inside a separate class
     class Discriminator(nn.Module):
         def __init__(self, sizes, nb_classes=1):
             super(Discriminator, self).__init__()
@@ -233,13 +232,13 @@ if __name__ == '__main__':
                 build_Discriminator(mbd=self.mbd, sparsity=self.sparsity, sparsity_mbd=self.sparsity_mbd,sizes=sizes[2*i:(i+1)*2])
                 for i in range(3)
             ])
-#TODO: la dimensione del layer tiene in conto solo le features, bisogna controllare anche tutto il resto 
-#
-            self.fc = nn.Linear(np.prod([x.outShape for x in self.layers]) + 10, 1) 
-            self.aux_fc = nn.Linear(480 + 10, nb_classes) if nb_classes > 1 else None
+
+    #NOTE: con tutto true il fc ha bisogno di 1863, mentre nel caso false solo 1800
+            self.fc = nn.Linear(1863, 1) 
+            self.aux_fc = nn.Linear(1863, 1) if nb_classes > 1 else None
 
             # For minibatch discrimination
-            self.dense3d_energy = Dense3D(nb_features=10, last_dim=10, input_shape=(1,))
+            self.dense3d_energy = Dense3D(first_dim=10, last_dim=10, input_shape=(3,1))
 
         def forward(self, inputs, input_energy):
             features = []
@@ -252,7 +251,7 @@ if __name__ == '__main__':
 
             # Concatenate features
             features = torch.cat(features, dim=1)
-            energies = torch.cat(energies, dim=1)
+            energies = torch.cat(energies,dim=1)
 
             # Total energy across all rows
             total_energy = torch.sum(energies, dim=1, keepdim=True)
