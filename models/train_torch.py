@@ -108,7 +108,7 @@ if __name__ == '__main__':
     from tqdm import tqdm
 
     from ops_pytorch import (minibatch_discriminator, minibatch_output_shape, Dense3D,
-                     calculate_energy, scale, inpainting_attention)
+                     calculate_energy, scale, InpaintingAttention)
 
     from architectures_torch import build_Generator, build_Discriminator
 

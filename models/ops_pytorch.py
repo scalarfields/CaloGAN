@@ -130,7 +130,6 @@ class Dense3D(nn.Module):
 
     def forward(self, inputs):
         # Compute the output
-        print(inputs.shape, self.kernel.shape)
         out = torch.tensordot(inputs, self.kernel, dims=([1],[1]))
         if self.use_bias:
             out += self.bias
@@ -155,12 +154,10 @@ def minibatch_output_shape(input_shape):
 def minibatch_discriminator(x):
     # Expand dimensions and compute differences
     diffs = x.unsqueeze(3) - x.permute(1, 2, 0).unsqueeze(0)
-    #print(diffs.shape)
 
     # Compute the L1 norm
     l1_norm = torch.sum(torch.abs(diffs), dim=2)
-    #print(l1_norm.shape)
-
+   
     # Compute the exponent of the negative L1 norm and sum across the batch
     return torch.sum(torch.exp(-l1_norm), dim=2)
 
@@ -188,7 +185,6 @@ def energy_error(requested_energy, received_energy):
 
     # Determine if the energy is over the requested amount
     over_energized = (difference > 0).float()
-    print(over_energized)
 
     # Compute the penalties for too high and too low energy
     too_high = 100 * torch.abs(difference)
