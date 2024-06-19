@@ -20,6 +20,7 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.utils import shuffle
 import sys
 import yaml
+import time
 
 
 if __name__ == '__main__':
@@ -208,11 +209,12 @@ if __name__ == '__main__':
 
 
     # Convert to PyTorch tensors
-    first = torch.tensor(first, dtype=torch.float32)
-    second = torch.tensor(second, dtype=torch.float32)
-    third = torch.tensor(third, dtype=torch.float32)
+    
+    first = torch.tensor(first, dtype=torch.float32).permute(0, 3, 1, 2)
+    second = torch.tensor(second, dtype=torch.float32).permute(0, 3, 1, 2)
+    third = torch.tensor(third, dtype=torch.float32).permute(0, 3, 1, 2)
     y = torch.tensor(y, dtype=torch.long)
-    energy = torch.tensor(energy, dtype=torch.float32)
+    energy = torch.tensor(energy, dtype=torch.float32, requires_grad=True)
 
     # Dataset and DataLoader
     dataset = TensorDataset(first, second, third, energy,y)
@@ -286,186 +288,157 @@ if __name__ == '__main__':
 
             return discriminator_outputs
 
-    logger.info('Building generator')
+    class Generator(nn.Module):
+        def __init__(self, latent_size, no_attn, nb_classes=1):
+            super(Generator, self).__init__()
+            self.latent_size = latent_size
+            self.nb_classes = nb_classes
+            self.no_attn = no_attn
 
-    latent = Input(shape=(latent_size, ), name='z')
-    input_energy = Input(shape=(1, ), dtype='float32')
-    generator_inputs = [latent, input_energy]
-
-    # ACGAN case
-    if nb_classes > 1:
-        logger.info('running in ACGAN for generator mode since found {} '
-                    'classes'.format(nb_classes))
-
-        # label of requested class
-        image_class = Input(shape=(1, ), dtype='int32')
-        lookup_table = Embedding(nb_classes, latent_size, input_length=1,
-                                 embeddings_initializer='glorot_normal')
-        emb = Flatten()(lookup_table(image_class))
-
-        # hadamard product between z-space and a class conditional embedding
-        hc = multiply([latent, emb])
-
-        # requested energy comes in GeV
-        h = Lambda(lambda x: x[0] * x[1])([hc, scale(input_energy, 100)])
-        generator_inputs.append(image_class)
-    else:
-        # requested energy comes in GeV
-        h = Lambda(lambda x: x[0] * x[1])([latent, scale(input_energy, 100)])
-
-    # each of these builds a LAGAN-inspired [arXiv/1701.05927] component with
-    # linear last layer
-    img_layer0 = build_Generator(h, 3, 96)
-    img_layer1 = build_Generator(h, 12, 12)
-    img_layer2 = build_Generator(h, 12, 6)
-
-    if not no_attn:
-
-        logger.info('using attentional mechanism')
-
-        # resizes from (3, 96) => (12, 12)
-        zero2one = AveragePooling2D(pool_size=(1, 8))(
-            UpSampling2D(size=(4, 1))(img_layer0))
-        img_layer1 = inpainting_attention(img_layer1, zero2one)
-
-        # resizes from (12, 12) => (12, 6)
-        one2two = AveragePooling2D(pool_size=(1, 2))(img_layer1)
-        img_layer2 = inpainting_attention(img_layer2, one2two)
-
-    generator_outputs = [
-        Activation('relu')(img_layer0),
-        Activation('relu')(img_layer1),
-        Activation('relu')(img_layer2)
-    ]
-
-    generator = Model(generator_inputs, generator_outputs)
-
-    generator.compile(
-        optimizer=Adam(lr=gen_lr, beta_1=adam_beta_1),
-        loss='binary_crossentropy'
-    )
-
-    discriminator.trainable = False
-
-    combined_outputs = discriminator(
-        generator(generator_inputs) + [input_energy]
-    )
-
-    combined = Model(generator_inputs, combined_outputs, name='combined_model')
-    combined.compile(
-        optimizer=Adam(lr=gen_lr, beta_1=adam_beta_1),
-        loss=discriminator_losses
-    )
+            # Embedding layer
+            if nb_classes > 1:
+                self.embedding = nn.Embedding(nb_classes, latent_size)
+                self.flatten = nn.Flatten()
 
 
-#TODO: End Traslation
+            # Define generator layers
+            self.gen_layer0 = build_Generator(latent_size, 3, 96)
+            self.gen_layer1 = build_Generator(latent_size, 12, 12)
+            self.gen_layer2 = build_Generator(latent_size, 12, 6)
+
+            if not no_attn:
+                self.attn_layer1=InpaintingAttention(constant=-10.0, input_size=[14,14])
+                self.attn_layer2=InpaintingAttention(constant=-10.0, input_size=[14,8])
+
+
+        def forward(self, generator_inputs, image_class=None):
+            latent=generator_inputs[0]
+            input_energy=generator_inputs[1]
+            if self.nb_classes > 1 and image_class is not None:
+                emb = self.embedding(image_class)
+                emb = self.flatten(emb)
+                hc = latent * emb
+                h = hc * scale(input_energy, 100)
+            else:
+                h = latent * scale(input_energy, 100).shape[1]
+
+            img_layer0 = self.gen_layer0(h)
+            img_layer1 = self.gen_layer1(h)
+            img_layer2 = self.gen_layer2(h)
+
+            if not no_attn:
+                # resizes from (3, 96) => (12, 12)
+                zero2one = nn.AvgPool2d(kernel_size=(1, 8))(
+                    nn.Upsample(scale_factor=(4, 1), mode='nearest')(img_layer0))
+                img_layer1 = self.attn_layer1(img_layer1, zero2one)
+                
+                # resizes from (12, 12) => (12, 6)
+                one2two = nn.AvgPool2d(kernel_size=(1, 2))(img_layer1)
+                img_layer2 = self.attn_layer2(img_layer2, one2two)
+        
+
+            return [F.relu(img_layer0), F.relu(img_layer1), F.relu(img_layer2)]
+        
+    discriminator = Discriminator(sizes)
+    generator=Generator(latent_size, False)
+
     logger.info('commencing training')
 
+    opt_g = torch.optim.Adam(params=generator.parameters(), lr=gen_lr, weight_decay=1e-5)
+    opt_d = torch.optim.Adam(params=discriminator.parameters(), lr=disc_lr, weight_decay=1e-5)
+
+    bce_loss=nn.BCELoss()
+    mae_loss=nn.L1Loss()
+
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    generator.to(device)
+    discriminator.to(device)
+
+    disc_loss = []
+    gen_loss = []
+        
+    ones = torch.ones(batch_size,device=device)
+    zeros = torch.zeros(batch_size,device=device)
+
     for epoch in range(nb_epochs):
-        logger.info('Epoch {} of {}'.format(epoch + 1, nb_epochs))
+        t0 = time.time()
+        train_loss = 0
+        counter=0
+        disc_loss_partial=0
+        gen_loss_partial=0
 
-        nb_batches = int(first.shape[0] / batch_size)
-        if verbose:
-            progress_bar = Progbar(target=nb_batches)
+        for image_batch_1,image_batch_2, image_batch_3, energy_batch, label_batch in tqdm(dataloader, desc="Training"):
+            
+            opt_d.zero_grad()
 
-        epoch_gen_loss = []
-        epoch_disc_loss = []
-
-        for index in range(nb_batches):
-            if verbose:
-                progress_bar.update(index)
-            else:
-                if index % 100 == 0:
-                    logger.info('processed {}/{} batches'.format(index + 1, nb_batches))
-                elif index % 10 == 0:
-                    logger.debug('processed {}/{} batches'.format(index + 1, nb_batches))
-
-            # generate a new batch of noise
-            noise = np.random.normal(0, 1, (batch_size, latent_size))
-
-            # get a batch of real images
-            image_batch_1 = first[index * batch_size:(index + 1) * batch_size]
-            image_batch_2 = second[index * batch_size:(index + 1) * batch_size]
-            image_batch_3 = third[index * batch_size:(index + 1) * batch_size]
-            label_batch = y[index * batch_size:(index + 1) * batch_size]
-            energy_batch = energy[index * batch_size:(index + 1) * batch_size]
-
+            noise = torch.normal(0, 1, size=(batch_size, latent_size), device=device)
+            image_batch_1 = image_batch_1.to(device)
+            image_batch_2 = image_batch_2.to(device)
+            image_batch_3 = image_batch_3.to(device)
             # energy_breakdown
 
-            sampled_labels = np.random.randint(0, nb_classes, batch_size)
-            sampled_energies = np.random.uniform(1, 100, (batch_size, 1))
+            sampled_labels = torch.randint(0, nb_classes, size=(batch_size,),device=device)
+            sampled_energies = torch.rand( size=(batch_size, 1),device=device)*99+1
 
             generator_inputs = [noise, sampled_energies]
-            if nb_classes > 1:
-                # in the case of the ACGAN, we need to append the requested
-                # class to the pre-image of the generator
-                generator_inputs.append(sampled_labels)
 
-            generated_images = generator.predict(generator_inputs, verbose=0)
+            """ if nb_classes > 1:
+                    # in the case of the ACGAN, we need to append the requested
+                    # class to the pre-image of the generator
+                    generator_inputs.append(sampled_labels) """
 
-            disc_outputs_real = [np.ones(batch_size), energy_batch]
-            disc_outputs_fake = [np.zeros(batch_size), sampled_energies]
+            generated_images = generator(generator_inputs)
 
-            # downweight the energy reconstruction loss ($\lambda_E$ in paper)
-            loss_weights = [np.ones(batch_size), 0.05 * np.ones(batch_size)]
-            if nb_classes > 1:
-                # in the case of the ACGAN, we need to append the realrequested
-                # class to the target
-                disc_outputs_real.append(label_batch)
-                disc_outputs_fake.append(bit_flip(sampled_labels, 0.3))
-                loss_weights.append(0.2 * np.ones(batch_size))
+            #disc_outputs_real = [torch.ones(batch_size), energy_batch]
+            #disc_outputs_fake = [torch.zeros(batch_size), sampled_energies]
 
-            real_batch_loss = discriminator.train_on_batch(
-                [image_batch_1, image_batch_2, image_batch_3, energy_batch],
-                disc_outputs_real,
-                loss_weights
-            )
+            #loss_weights = torch.Tensor([1, 0.05]
+            #print(loss_weights.requires_grad)
 
-            # note that a given batch should have either *only* real or *only* fake,
-            # as we have both minibatch discrimination and batch normalization, both
-            # of which rely on batch level sloss_weights3tats
-            fake_batch_loss = discriminator.train_on_batch(
-                generated_images + [sampled_energies],
-                disc_outputs_fake,
-                loss_weights
-            )
+            
+            
+            out = discriminator([image_batch_1,image_batch_2, image_batch_3], energy_batch)
+            loss_real =   bce_loss(out[0].view(-1), ones) + 0.05 * mae_loss(out[1].view(-1), energy_batch)
+            
+            loss_real.backward()
 
-            epoch_disc_loss.append(
-                (np.array(fake_batch_loss) + np.array(real_batch_loss)) / 2)
+            out = discriminator(generated_images, sampled_energies)
+            loss_fake =  bce_loss(out[0].view(-1), zeros) + 0.05*mae_loss(out[1].view(-1), sampled_energies)
+            
+            loss_fake.backward()
+            opt_d.step()
 
-            # we want to train the genrator to trick the discriminator
-            # For the generator, we want all the {fake, real} labels to say
-            # real
-            trick = np.ones(batch_size)
+            disc_loss_partial+=((loss_real.item() + loss_fake.item()) / 2)
+            
+            opt_g.zero_grad()
 
-            gen_losses = []
 
-            # we do this twice simply to match the number of batches per epoch used to
-            # train the discriminator
-            for _ in range(2):
-                noise = np.random.normal(0, 1, (batch_size, latent_size))
+            noise = torch.normal(0, 1, size=(batch_size, latent_size), device=device)
+            sampled_energies = torch.rand( size=(batch_size, 1),device=device)*99+1
+            combined_inputs = [noise, sampled_energies]
+            out=discriminator(generator(combined_inputs),sampled_energies)
 
-                sampled_energies = np.random.uniform(1, 100, (batch_size, 1))
-                combined_inputs = [noise, sampled_energies]
-                combined_outputs = [trick, sampled_energies]
-                if nb_classes > 1:
-                    sampled_labels = np.random.randint(0, nb_classes,
-                                                       batch_size)
-                    combined_inputs.append(sampled_labels)
-                    combined_outputs.append(sampled_labels)
+            loss_gen=bce_loss(out[0].view(-1), ones) + 0.05*mae_loss(out[1].view(-1), sampled_energies)
+            loss_gen.backward()
 
-                gen_losses.append(combined.train_on_batch(
-                    combined_inputs,
-                    combined_outputs,
-                    loss_weights
-                ))
+            opt_g.step()
+            gen_loss_partial+=loss_gen.item()
 
-            epoch_gen_loss.append(np.mean(np.array(gen_losses), axis=0))
 
-        logger.info('Epoch {:3d} Generator loss: {}'.format(
-            epoch + 1, np.mean(epoch_gen_loss, axis=0)))
-        logger.info('Epoch {:3d} Discriminator loss: {}'.format(
-            epoch + 1, np.mean(epoch_disc_loss, axis=0)))
+        disc_loss.append(disc_loss_partial/batch_size)
+        gen_loss.append(gen_loss_partial/batch_size)
+        print('Epoch {:3d} Generator loss: {}'.format(epoch + 1, gen_loss_partial/batch_size))
+        print(('Epoch {:3d} Discriminator loss: {}'.format(epoch + 1, disc_loss_partial/batch_size)))
+            
+        
+
+
+            
+
+
+            
+
 
         # save weights every epoch
         generator.save_weights('{0}{1:03d}.hdf5'.format(parse_args.g_pfx, epoch),
