@@ -287,7 +287,7 @@ if __name__ == '__main__':
                 discriminator_outputs.append(aux)
 
             return discriminator_outputs
-
+    logger.info('Building generator')
     class Generator(nn.Module):
         def __init__(self, latent_size, no_attn, nb_classes=1):
             super(Generator, self).__init__()
