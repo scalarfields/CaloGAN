@@ -154,13 +154,13 @@ if __name__ == '__main__':
     # read in data file spec from YAML file
     with open(yaml_file, 'r') as stream:
         try:
-            s = yaml.load(stream)
+            s = yaml.safe_load(stream)
         except yaml.YAMLError as exc:
             logger.error(exc)
             raise exc
     nb_classes = len(s.keys())
     logger.info('{} particle types found.'.format(nb_classes))
-    for name, pth in s.iteritems():
+    for name, pth in s.items():
         logger.debug('class {} <= {}'.format(name, pth))
 
     def _load_data(particle, datafile):
@@ -191,7 +191,7 @@ if __name__ == '__main__':
 
     first, second, third, y, energy, sizes = [
         np.concatenate(t) for t in [
-            a for a in zip(*[_load_data(p, f) for p, f in s.iteritems()])
+            a for a in zip(*[_load_data(p, f) for p, f in s.items()])
         ]
     ]
 
@@ -437,12 +437,4 @@ if __name__ == '__main__':
             
 
 
-            
-
-
-        # save weights every epoch
-        generator.save_weights('{0}{1:03d}.hdf5'.format(parse_args.g_pfx, epoch),
-                               overwrite=True)
-
-        discriminator.save_weights('{0}{1:03d}.hdf5'.format(parse_args.d_pfx, epoch),
-                                   overwrite=True)
+    
